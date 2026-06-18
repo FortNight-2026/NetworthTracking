@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Fortnight — Wealth &amp; Expense Tracker</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>html,body{margin:0;padding:0}body{background:#F1F2EC}</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◷</span>
+      <div class="brand-text">
+        <h1>Fortnight</h1>
+        <p>Your wealth, every two weeks</p>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Sections">
+      <button class="tab is-active" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="snapshot">New&nbsp;snapshot</button>
+      <button class="tab" data-view="history">History</button>
+      <button class="tab" data-view="accounts">Accounts</button>
+      <button class="tab" data-view="sync">Sync</button>
+    </nav>
+  </header>
+
+  <main id="main"><!-- views render here --></main>
+
+  <footer class="foot"><span id="storage-status" class="storage-status"></span></footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</div>
+
+<style>
+  :root{
+    --paper:#F1F2EC;
+    --surface:#FBFBF7;
+    --surface-2:#F6F6F0;
+    --ink:#1E2A24;
+    --ink-2:#566159;
+    --ink-3:#8A938A;
+    --line:#DEDFD4;
+    --line-strong:#CBccBE;
+    --green:#2F6F4E;
+    --green-soft:#E5EFE7;
+    --clay:#A8492F;
+    --clay-soft:#F3E4DD;
+    --slate:#3E7CB1;
+    --plum:#6B4E8C;
+    --brass:#B08642;
+    --amber:#C9772F;
+    --focus:#2F6F4E;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(30,42,36,.05), 0 8px 24px rgba(30,42,36,.05);
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --num:var(--sans);
+  }
+  *{box-sizing:border-box}
+  #app{
+    font-family:var(--sans);
+    color:var(--ink);
+    background:
+      radial-gradient(900px 500px at 12% -10%, rgba(47,111,78,.06), transparent 60%),
+      var(--paper);
+    min-height:100%;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+    font-feature-settings:"tnum" 1,"lnum" 1;
+    padding-bottom:48px;
+  }
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+  h1,h2,h3{margin:0;font-weight:600}
+  button{font-family:inherit}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:20;
+    display:flex;align-items:center;gap:24px;flex-wrap:wrap;
+    padding:14px clamp(16px,4vw,40px);
+    background:rgba(241,242,236,.86);
+    backdrop-filter:saturate(140%) blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand-mark{
+    font-size:26px;color:var(--green);
+    width:42px;height:42px;display:grid;place-items:center;
+    border:1px solid var(--line-strong);border-radius:50%;
+    background:var(--surface);
+  }
+  .brand-text h1{font-family:var(--serif);font-size:24px;letter-spacing:.3px}
+  .brand-text p{margin:0;font-size:12px;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase}
+  .tabs{display:flex;gap:4px;margin-left:auto;overflow-x:auto;max-width:100%}
+  .tab{
+    border:0;background:transparent;color:var(--ink-2);
+    padding:9px 14px;border-radius:999px;cursor:pointer;
+    font-size:14px;font-weight:500;white-space:nowrap;
+    transition:background .15s,color .15s;
+  }
+  .tab:hover{background:var(--surface-2);color:var(--ink)}
+  .tab.is-active{background:var(--ink);color:#F4F5EF}
+
+  /* ---------- layout ---------- */
+  main{max-width:1080px;margin:0 auto;padding:clamp(20px,4vw,40px)}
+  .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .card{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;
+  }
+  .grid{display:grid;gap:18px}
+  .muted{color:var(--ink-2)}
+  .pos{color:var(--green)}
+  .neg{color:var(--clay)}
+
+  /* ---------- hero / dashboard ---------- */
+  .hero{
+    display:grid;grid-template-columns:minmax(260px,1fr) 1.4fr;gap:26px;align-items:stretch;
+    margin-bottom:18px;
+  }
+  .net-block{display:flex;flex-direction:column;justify-content:center}
+  .net-range{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .net-range .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+  .net-value{font-family:var(--serif);font-size:clamp(40px,7vw,60px);line-height:1;letter-spacing:-.5px}
+  .net-rule{height:1px;background:var(--line-strong);margin:14px 0 12px}
+  .net-delta{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+    font-size:13px;font-weight:600;background:var(--surface-2);border:1px solid var(--line)
+  }
+  .chip.up{color:var(--green);background:var(--green-soft);border-color:#cfe2d4}
+  .chip.down{color:var(--clay);background:var(--clay-soft);border-color:#ecd3c8}
+
+  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:18px 0}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+  .stat .k{font-size:12px;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+  .stat .v{font-size:22px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+  .stat .sub{font-size:12px;color:var(--ink-2);margin-top:3px}
+
+  .panel-row{display:grid;grid-template-columns:1.3fr 1fr;gap:18px}
+  .panel-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:10px}
+  .panel-head h3{font-size:16px}
+  .panel-head .hint{font-size:12px;color:var(--ink-3)}
+
+  /* charts */
+  .chart{width:100%;height:auto;display:block}
+  .legend{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  .legend li{display:flex;align-items:center;gap:9px;font-size:13px;list-style:none}
+  .legend .sw{width:11px;height:11px;border-radius:3px;flex:none}
+  .legend .amt{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600}
+  .legend .pct{color:var(--ink-3);width:42px;text-align:right;font-variant-numeric:tabular-nums}
+  ul{margin:0;padding:0}
+
+  .bars{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  .bar-row{display:grid;grid-template-columns:120px 1fr auto;align-items:center;gap:10px;font-size:13px}
+  .bar-track{height:9px;background:var(--surface-2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar-fill{height:100%;border-radius:99px}
+  .bar-amt{font-variant-numeric:tabular-nums;font-weight:600}
+
+  /* ---------- empty states ---------- */
+  .empty{text-align:center;padding:48px 20px;max-width:460px;margin:0 auto}
+  .empty .mk{font-size:34px;color:var(--green);opacity:.7}
+  .empty h3{font-family:var(--serif);font-size:22px;margin:10px 0 6px}
+  .empty p{color:var(--ink-2);margin:0 0 18px}
+
+  /* ---------- buttons ---------- */
+  .btn{
+    border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+    padding:9px 16px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;transition:background .15s,border-color .15s,transform .05s;
+  }
+  .btn:hover{background:var(--surface-2)}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--green);border-color:var(--green);color:#F4F5EF}
+  .btn.primary:hover{background:#28603f}
+  .btn.ghost{border-color:transparent;background:transparent}
+  .btn.ghost:hover{background:var(--surface-2)}
+  .btn.danger{color:var(--clay);border-color:#e3c6bb}
+  .btn.danger:hover{background:var(--clay-soft)}
+  .btn.sm{padding:6px 11px;font-size:13px}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  /* ---------- forms ---------- */
+  label{font-size:13px;font-weight:600;color:var(--ink-2)}
+  input,select{
+    font-family:inherit;font-size:15px;color:var(--ink);
+    background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;
+    padding:9px 11px;width:100%;
+  }
+  input:focus,select:focus{outline:2px solid var(--focus);outline-offset:1px;border-color:var(--focus)}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .money-input{position:relative}
+  .money-input input{padding-left:24px;text-align:right;font-variant-numeric:tabular-nums}
+  .money-input::before{content:"$";position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--ink-3);font-size:14px}
+
+  .section-block{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px;background:var(--surface)}
+  .section-head{
+    display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+    padding:14px 18px;background:var(--surface-2);border:0;cursor:pointer;font-size:15px;font-weight:600;color:var(--ink);
+  }
+  .section-head .tag{width:10px;height:10px;border-radius:3px;flex:none}
+  .section-head .sum{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ink-2);font-weight:600}
+  .section-head .caret{transition:transform .15s;color:var(--ink-3);font-size:12px}
+  .section-block.collapsed .caret{transform:rotate(-90deg)}
+  .section-block.collapsed .section-body{display:none}
+  .section-body{padding:6px 18px 16px}
+  .acct-line{display:grid;grid-template-columns:1fr 170px;gap:14px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+  .acct-line:first-child{border-top:0}
+  .acct-name{font-size:14px}
+  .acct-name small{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+  .margin-note{font-size:12.5px;color:var(--clay);background:var(--clay-soft);border:1px solid #ecd3c8;border-radius:8px;padding:8px 11px;margin:8px 0}
+
+  .line-list{display:flex;flex-direction:column;gap:8px}
+  .line-item{display:grid;grid-template-columns:1.3fr 150px 38px;gap:10px;align-items:center}
+  .icon-btn{border:1px solid var(--line-strong);background:var(--surface);border-radius:9px;width:38px;height:38px;cursor:pointer;color:var(--clay);font-size:16px;display:grid;place-items:center}
+  .icon-btn:hover{background:var(--clay-soft)}
+
+  .sticky-actions{
+    position:sticky;bottom:0;margin-top:18px;
+    display:flex;gap:12px;justify-content:flex-end;align-items:center;flex-wrap:wrap;
+    padding:14px 16px;background:rgba(251,251,247,.92);backdrop-filter:blur(6px);
+    border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  }
+  .sticky-actions .summary{margin-right:auto;font-size:13px;color:var(--ink-2)}
+  .sticky-actions .summary b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+  /* ---------- table ---------- */
+  .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:14px;min-width:640px}
+  th,td{padding:12px 14px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--line);font-weight:600;background:var(--surface-2)}
+  tbody tr{border-top:1px solid var(--line);cursor:pointer}
+  tbody tr:hover{background:var(--surface-2)}
+  td .num{font-variant-numeric:tabular-nums}
+  .rate-pill{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0 16px}
+  .toolbar .spacer{margin-left:auto}
+
+  /* ---------- accounts editor ---------- */
+  .acct-edit{display:grid;grid-template-columns:1fr 200px 130px auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+  .acct-edit:first-child{border-top:0}
+  .add-acct{display:grid;grid-template-columns:1fr 200px 130px auto;gap:10px;align-items:end;margin-top:14px;padding-top:14px;border-top:2px solid var(--line)}
+  .check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);font-weight:600}
+  .check input{width:auto}
+
+  /* toast */
+  .toast{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#F4F5EF;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:500;
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50;box-shadow:var(--shadow)
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .help{font-size:13px;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:16px}
+  .help b{color:var(--ink)}
+
+  .foot{max-width:1080px;margin:0 auto;padding:4px clamp(16px,4vw,40px) 20px}
+  .storage-status{font-size:12px;color:var(--ink-3);display:flex;align-items:center;gap:7px;line-height:1.5}
+  .storage-status::before{content:"●";color:var(--green);font-size:9px;flex:none}
+  .storage-status.warn{color:var(--clay)}
+  .storage-status.warn::before{color:var(--clay)}
+
+  @media (max-width:860px){
+    .hero{grid-template-columns:1fr}
+    .panel-row{grid-template-columns:1fr}
+  }
+  @media (max-width:620px){
+    .brand-text p{display:none}
+    .acct-line{grid-template-columns:1fr 130px}
+    .line-item{grid-template-columns:1fr 110px 38px}
+    .acct-edit,.add-acct{grid-template-columns:1fr 1fr;gap:8px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<script>
+(function(){
+  "use strict";
+  const KEY="fortnight-data-v1";
+
+  const GROUPS={
+    cash:{label:"Cash & Bank",color:"#3E7CB1",kind:"asset"},
+    brokerage:{label:"Brokerage (taxable)",color:"#2F6F4E",kind:"asset"},
+    crypto:{label:"Crypto",color:"#C9772F",kind:"asset"},
+    retirement:{label:"Retirement",color:"#6B4E8C",kind:"asset"},
+    hsa:{label:"HSA",color:"#B08642",kind:"asset"},
+    property:{label:"Property / Real estate",color:"#5B8C7B",kind:"asset"},
+    credit:{label:"Credit cards",color:"#A8492F",kind:"liability"},
+    loans:{label:"Loans & mortgage",color:"#7A5C3E",kind:"liability"}
+  };
+  const GROUP_ORDER=["cash","brokerage","crypto","retirement","hsa","property","credit","loans"];
+
+  const SEED_ACCOUNTS=[
+    {id:"sofi_chk",name:"SoFi Checking",group:"cash"},
+    {id:"sofi_sav",name:"SoFi Savings",group:"cash"},
+    {id:"chase_chk",name:"Chase Checking",group:"cash"},
+    {id:"chase_sav1",name:"Chase Savings 1",group:"cash"},
+    {id:"chase_sav2",name:"Chase Savings 2",group:"cash"},
+    {id:"ally_chk",name:"Ally Checking",group:"cash"},
+    {id:"ally_sav",name:"Ally Savings",group:"cash"},
+    {id:"capone_sav",name:"Capital One Savings",group:"cash"},
+    {id:"rh_margin",name:"Robinhood (Margin)",group:"brokerage",margin:true},
+    {id:"rh_2",name:"Robinhood",group:"brokerage"},
+    {id:"sofi_inv",name:"SoFi Invest",group:"brokerage"},
+    {id:"webull",name:"Webull",group:"brokerage"},
+    {id:"vanguard",name:"Vanguard",group:"brokerage"},
+    {id:"fid_ind",name:"Fidelity Individual",group:"brokerage"},
+    {id:"coinbase",name:"Coinbase",group:"crypto"},
+    {id:"schwab_401k",name:"Charles Schwab 401(k)",group:"retirement"},
+    {id:"transam_401k",name:"Transamerica 401(k)",group:"retirement"},
+    {id:"fid_ira",name:"Fidelity IRA",group:"retirement"},
+    {id:"inspira_hsa",name:"Inspira HSA",group:"hsa"},
+    {id:"fid_hsa",name:"Fidelity HSA",group:"hsa"},
+    {id:"amex",name:"American Express",group:"credit"},
+    {id:"discover",name:"Discover",group:"credit"},
+    {id:"chase_cc",name:"Chase",group:"credit"},
+    {id:"apple_card",name:"Apple Card",group:"credit"},
+    {id:"home",name:"Home (market value)",group:"property"},
+    {id:"mortgage",name:"Mortgage — US Bank",group:"loans"}
+  ];
+
+  const EXPENSE_CATS=["Mortgage / housing","Rent","Groceries (Walmart)","Groceries (Indian store)","Groceries (other)","Fast food / dining out","Electricity","Water","Gas (home)","Gas (car)","Internet","Phone","Car insurance","Car payment","Health / medical","Subscriptions","Shopping","Travel","Margin interest","Fees / interest","Other"];
+  const INCOME_CATS=["Paycheck","Bonus","Dividends","Interest","Side income","Refund","Other"];
+
+  // ---------- state ----------
+  let state={accounts:[],periods:[]};
+  let view="dashboard";
+  let editingId=null;        // period being edited in snapshot view
+  let draft=null;            // working copy for snapshot form
+  let collapsed={};          // collapsed section state in snapshot form
+
+  // ---------- utils ----------
+  const $=s=>document.querySelector(s);
+  const main=()=>document.getElementById("main");
+  const uid=()=>Math.random().toString(36).slice(2,9);
+  const n=v=>{const x=parseFloat(v);return isNaN(x)?0:x;};
+  function money(v,opts){
+    opts=opts||{};
+    const neg=v<0;const abs=Math.abs(v);
+    const s=abs.toLocaleString("en-US",{minimumFractionDigits:opts.cents?2:0,maximumFractionDigits:opts.cents?2:0});
+    return (neg?"-$":"$")+s;
+  }
+  function signed(v){return (v>=0?"+":"-")+"$"+Math.abs(v).toLocaleString("en-US",{maximumFractionDigits:0});}
+  function pct(v){return (v>=0?"+":"")+v.toFixed(1)+"%";}
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+  function parseDate(s){const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d);}
+  function fmtDate(s){if(!s)return"";const d=parseDate(s);return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});}
+  function fmtShort(s){if(!s)return"";const d=parseDate(s);return d.toLocaleDateString("en-US",{month:"short",day:"numeric"});}
+  function isoOffset(date,days){const d=new Date(date);d.setDate(d.getDate()+days);return d.toISOString().slice(0,10);}
+  function todayIso(){return new Date().toISOString().slice(0,10);}
+
+  function sortedPeriods(){return [...state.periods].sort((a,b)=>parseDate(a.start)-parseDate(b.start));}
+  function acctById(id){return state.accounts.find(a=>a.id===id);}
+
+  // ---------- calculations ----------
+  function periodTotals(p){
+    let assets=0,liabilities=0;
+    state.accounts.forEach(a=>{
+      const bal=n(p.balances&&p.balances[a.id]);
+      if(GROUPS[a.group].kind==="liability") liabilities+=bal; else assets+=bal;
+    });
+    // margin loans count as liabilities
+    if(p.loans) Object.keys(p.loans).forEach(id=>{liabilities+=n(p.loans[id]);});
+    const income=(p.income||[]).reduce((s,r)=>s+n(r.amount),0);
+    const expenses=(p.expenses||[]).reduce((s,r)=>s+n(r.amount),0);
+    const net=assets-liabilities;
+    return {assets,liabilities,net,income,expenses,cashflow:income-expenses};
+  }
+  function groupBreakdown(p){
+    const out={};GROUP_ORDER.forEach(g=>out[g]=0);
+    state.accounts.forEach(a=>{out[a.group]+=n(p.balances&&p.balances[a.id]);});
+    return out;
+  }
+
+  // ---------- persistence (local cache + Google Drive sync) ----------
+  const CURRENT_VERSION=2;
+  const hasCloud=(typeof window!=="undefined")&&window.storage&&typeof window.storage.get==="function"&&typeof window.storage.set==="function";
+  let storageMode=hasCloud?"cloud":"local";
+
+  // local helpers (safe wrappers)
+  function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+  function lsSet(k,v){try{localStorage.setItem(k,v);return true;}catch(e){return false;}}
+
+  function clone(o){return JSON.parse(JSON.stringify(o));}
+  function seedFresh(){state.accounts=clone(SEED_ACCOUNTS);state.periods=[];state.version=CURRENT_VERSION;}
+  function applyParsed(parsed){
+    state.accounts=Array.isArray(parsed.accounts)&&parsed.accounts.length?parsed.accounts:clone(SEED_ACCOUNTS);
+    state.periods=Array.isArray(parsed.periods)?parsed.periods:[];
+    state.version=parsed.version||1;
+    migrate();
+  }
+  function migrate(){
+    let changed=false;
+    if((state.version||1)<2){
+      if(!state.accounts.some(a=>a.id==="home")){state.accounts.push({id:"home",name:"Home (market value)",group:"property"});changed=true;}
+      if(!state.accounts.some(a=>a.id==="mortgage")){state.accounts.push({id:"mortgage",name:"Mortgage — US Bank",group:"loans"});changed=true;}
+    }
+    state.version=CURRENT_VERSION;
+    if(changed)saveLocal();
+  }
+
+  async function saveLocal(){
+    const json=JSON.stringify(state);
+    if(hasCloud){try{const r=await window.storage.set(KEY,json);return !!r;}catch(e){return false;}}
+    const ok=lsSet(KEY,json);if(!ok)storageMode="none";return ok;
+  }
+
+  async function load(){
+    let value=null;
+    if(hasCloud){try{const res=await window.storage.get(KEY);value=res?res.value:null;}catch(e){value=null;}}
+    else{value=lsGet(KEY);if(value===null&&storageMode!=="none"){/* maybe empty, fine */}}
+    if(value){try{applyParsed(JSON.parse(value));}catch(e){seedFresh();}}
+    else seedFresh();
+    updateStatus();render();
+    // then refresh from Google Drive if connected (pulls changes made on other devices)
+    if(driveConnected){
+      syncing=true;updateStatus();
+      try{
+        await waitForGis(5000);
+        const text=await drivePull();
+        if(text){applyParsed(JSON.parse(text));await saveLocal();}
+      }catch(e){driveError=true;}
+      syncing=false;updateStatus();render();
+    }
+  }
+
+  let saveTimer=null;
+  function save(quiet){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(async()=>{
+      const ok=await saveLocal();
+      if(!ok){toast("Couldn't save locally — use Back up (JSON)");updateStatus();return;}
+      if(driveConnected){
+        try{await drivePush();driveError=false;if(!quiet)toast("Synced to Google Drive");}
+        catch(e){driveError=true;if(!quiet)toast("Saved on device — Drive sync will retry");}
+      }else if(!quiet){toast("Saved");}
+      updateStatus();
+    },180);
+  }
+
+  function updateStatus(){
+    const el=document.getElementById("storage-status");if(!el)return;
+    let msg,warn=false;
+    if(driveConnected){
+      if(syncing)msg="Syncing with Google Drive…";
+      else if(driveError)msg="Connected to Google Drive, but the last sync didn't go through — open Sync and tap “Sync now”.";
+      else msg="Synced with Google Drive — sign in with the same Google account on any device to see this history.";
+      if(lastSync&&!syncing&&!driveError)msg+=" · last synced "+new Date(lastSync).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+      warn=driveError;
+    }else if(storageMode==="none"){
+      msg="This browser is blocking storage, so nothing is being saved. Use Back up (JSON) often.";warn=true;
+    }else if(hasCloud){
+      msg="Saved to your Claude account. To use this on your phone from a hosted link, connect Google Drive in the Sync tab.";
+    }else{
+      msg="Saved on this device only. Connect Google Drive in the Sync tab to see the same history on any device.";
+    }
+    el.textContent=msg;el.classList.toggle("warn",warn);
+  }
+
+  // ---------- Google Drive ----------
+  const GKEY_CLIENT="fortnight-gclient";
+  const GKEY_CONN="fortnight-drive-connected";
+  const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.appdata";
+  const DRIVE_FILENAME="fortnight-data.json";
+  let gClientId=lsGet(GKEY_CLIENT)||"";
+  let driveConnected=lsGet(GKEY_CONN)==="1";
+  let tokenClient=null,accessToken=null,tokenExpiry=0,driveFileId=null;
+  let pendingResolve=null,pendingReject=null;
+  let lastSync=null,syncing=false,driveError=false;
+
+  function gisReady(){return typeof google!=="undefined"&&google.accounts&&google.accounts.oauth2;}
+  function waitForGis(ms){return new Promise(res=>{const t0=Date.now();(function chk(){if(gisReady()||Date.now()-t0>ms)res(gisReady());else setTimeout(chk,150);})();});}
+
+  function initTokenClient(){
+    if(!gisReady()||!gClientId)return false;
+    tokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:gClientId,scope:DRIVE_SCOPE,
+      callback:(resp)=>{
+        if(resp&&resp.access_token){accessToken=resp.access_token;tokenExpiry=Date.now()+((resp.expires_in||3600)*1000);if(pendingResolve)pendingResolve(accessToken);}
+        else{if(pendingReject)pendingReject(resp&&resp.error||"auth_failed");}
+        pendingResolve=pendingReject=null;
+      },
+      error_callback:(err)=>{if(pendingReject)pendingReject(err);pendingResolve=pendingReject=null;}
+    });
+    return true;
+  }
+  function getToken(interactive){
+    return new Promise((resolve,reject)=>{
+      if(accessToken&&Date.now()<tokenExpiry-60000){resolve(accessToken);return;}
+      if(!tokenClient&&!initTokenClient()){reject("not_configured");return;}
+      pendingResolve=resolve;pendingReject=reject;
+      try{tokenClient.requestAccessToken({prompt:interactive?"consent":""});}
+      catch(e){pendingResolve=pendingReject=null;reject(e);}
+    });
+  }
+  async function driveFindFile(token){
+    const q=encodeURIComponent("name='"+DRIVE_FILENAME+"'");
+    const r=await fetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q="+q+"&fields=files(id,name)",{headers:{Authorization:"Bearer "+token}});
+    if(!r.ok)throw new Error("find "+r.status);
+    const j=await r.json();return (j.files&&j.files[0])?j.files[0].id:null;
+  }
+  async function driveRead(token,id){
+    const r=await fetch("https://www.googleapis.com/drive/v3/files/"+id+"?alt=media",{headers:{Authorization:"Bearer "+token}});
+    if(!r.ok)throw new Error("read "+r.status);return await r.text();
+  }
+  async function driveCreate(token,content){
+    const b="fn_"+Math.random().toString(36).slice(2);
+    const meta=JSON.stringify({name:DRIVE_FILENAME,parents:["appDataFolder"]});
+    const body="--"+b+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+meta+"\r\n--"+b+"\r\nContent-Type: application/json\r\n\r\n"+content+"\r\n--"+b+"--";
+    const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"multipart/related; boundary="+b},body});
+    if(!r.ok)throw new Error("create "+r.status);
+    const j=await r.json();return j.id;
+  }
+  async function driveUpdate(token,id,content){
+    const r=await fetch("https://www.googleapis.com/upload/drive/v3/files/"+id+"?uploadType=media",{method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:content});
+    if(!r.ok)throw new Error("update "+r.status);return id;
+  }
+  async function drivePush(){
+    const token=await getToken(false);
+    const content=JSON.stringify(state);
+    if(!driveFileId)driveFileId=await driveFindFile(token);
+    if(driveFileId)await driveUpdate(token,driveFileId,content);
+    else driveFileId=await driveCreate(token,content);
+    lastSync=Date.now();
+  }
+  async function drivePull(){
+    const token=await getToken(false);
+    driveFileId=await driveFindFile(token);
+    if(!driveFileId)return null;
+    const text=await driveRead(token,driveFileId);
+    lastSync=Date.now();return text;
+  }
+
+  async function connectDrive(){
+    if(!gClientId){toast("Paste your Google Client ID first");return;}
+    if(!gisReady())await waitForGis(5000);
+    if(!gisReady()){toast("Google sign-in still loading — try again in a moment");return;}
+    if(!initTokenClient()){toast("Couldn't start Google sign-in");return;}
+    syncing=true;updateStatus();
+    try{
+      const token=await getToken(true);
+      driveFileId=await driveFindFile(token);
+      const localHasData=state.periods.length>0;
+      if(driveFileId){
+        const text=await driveRead(token,driveFileId);
+        let remote=null;try{remote=JSON.parse(text);}catch(e){}
+        const remoteHasData=remote&&Array.isArray(remote.periods)&&remote.periods.length>0;
+        if(remoteHasData&&localHasData){
+          const useRemote=confirm("Google Drive already has saved history.\n\nOK = use the copy from Drive on this device.\nCancel = upload THIS device's data to Drive (replaces what's in Drive).");
+          if(useRemote){applyParsed(remote);await saveLocal();}
+          else{await driveUpdate(token,driveFileId,JSON.stringify(state));}
+        }else if(remoteHasData){applyParsed(remote);await saveLocal();}
+        else{await driveUpdate(token,driveFileId,JSON.stringify(state));}
+      }else{
+        driveFileId=await driveCreate(token,JSON.stringify(state));
+      }
+      driveConnected=true;driveError=false;lsSet(GKEY_CONN,"1");lastSync=Date.now();
+      syncing=false;updateStatus();render();
+      toast("Connected to Google Drive");
+    }catch(e){
+      syncing=false;driveError=true;updateStatus();
+      toast("Google connection failed — check your Client ID and authorized origin");
+    }
+  }
+  async function syncNow(){
+    if(!driveConnected)return;
+    syncing=true;updateStatus();
+    try{const text=await drivePull();if(text){applyParsed(JSON.parse(text));await saveLocal();}driveError=false;toast("Synced from Google Drive");}
+    catch(e){driveError=true;toast("Sync failed — try reconnecting in Sync");}
+    syncing=false;updateStatus();render();
+  }
+  function disconnectDrive(){
+    if(accessToken&&gisReady()){try{google.accounts.oauth2.revoke(accessToken,()=>{});}catch(e){}}
+    driveConnected=false;accessToken=null;driveFileId=null;tokenExpiry=0;
+    lsSet(GKEY_CONN,"0");updateStatus();render();
+    toast("Disconnected — your data stays safe in Google Drive");
+  }
+
+  function toast(msg){
+    const t=document.getElementById("toast");
+    t.textContent=msg;t.classList.add("show");
+    clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.remove("show"),1900);
+  }
+
+  // ---------- navigation ----------
+  function setView(v){
+    view=v;
+    document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("is-active",b.dataset.view===v));
+    if(v==="snapshot"&&!draft) startNewSnapshot();
+    render();
+    main().scrollIntoView({block:"start",behavior:"auto"});
+  }
+  document.getElementById("tabs").addEventListener("click",e=>{
+    const b=e.target.closest(".tab");if(!b)return;
+    if(b.dataset.view!=="snapshot"){editingId=null;draft=null;}
+    setView(b.dataset.view);
+  });
+
+  // ====================================================
+  //  RENDER ROUTER
+  // ====================================================
+  function render(){
+    if(view==="dashboard")renderDashboard();
+    else if(view==="snapshot")renderSnapshot();
+    else if(view==="history")renderHistory();
+    else if(view==="accounts")renderAccounts();
+    else if(view==="sync")renderSync();
+  }
+
+  // ====================================================
+  //  DASHBOARD
+  // ====================================================
+  function renderDashboard(){
+    const periods=sortedPeriods();
+    if(!periods.length){
+      main().innerHTML=`
+      <div class="empty card">
+        <div class="mk">◷</div>
+        <h3>Start your first fortnight</h3>
+        <p>Record where everything stands today — balances, income, and expenses for the last two weeks. Come back every other week and Fortnight charts how it all moves.</p>
+        <button class="btn primary" id="go-first">Record first snapshot</button>
+      </div>`;
+      $("#go-first").onclick=()=>setView("snapshot");
+      return;
+    }
+    const latest=periods[periods.length-1];
+    const prev=periods.length>1?periods[periods.length-2]:null;
+    const t=periodTotals(latest);
+    const tp=prev?periodTotals(prev):null;
+    const deltaAbs=tp?t.net-tp.net:0;
+    const deltaPct=tp&&tp.net!==0?(deltaAbs/Math.abs(tp.net))*100:0;
+    const up=deltaAbs>=0;
+    const rate=t.income>0?(t.cashflow/t.income)*100:0;
+
+    const bd=groupBreakdown(latest);
+    const assetGroups=GROUP_ORDER.filter(g=>GROUPS[g].kind==="asset");
+
+    main().innerHTML=`
+      <section class="hero">
+        <div class="card net-block">
+          <div class="net-range">
+            <span class="dot"></span>
+            <span class="eyebrow">${fmtDate(latest.start)} – ${fmtDate(latest.end)}</span>
+          </div>
+          <div class="eyebrow muted" style="margin-bottom:4px">Net worth</div>
+          <div class="net-value num">${money(t.net)}</div>
+          <div class="net-rule"></div>
+          <div class="net-delta">
+            ${prev?`<span class="chip ${up?"up":"down"}">${up?"▲":"▼"} ${signed(deltaAbs)} <span style="opacity:.7">(${pct(deltaPct)})</span></span>
+              <span class="muted">vs. previous fortnight</span>`
+            :`<span class="muted">First snapshot — your baseline.</span>`}
+          </div>
+        </div>
+        <div class="card">
+          <div class="panel-head"><h3>Net worth over time</h3><span class="hint">${periods.length} snapshot${periods.length>1?"s":""}</span></div>
+          ${lineChart(periods.map(p=>({label:fmtShort(p.end),value:periodTotals(p).net})))}
+        </div>
+      </section>
+
+      <div class="stat-row">
+        ${stat("Assets",money(t.assets),GROUP_ORDER.filter(g=>GROUPS[g].kind==="asset").length+" account groups")}
+        ${stat("Liabilities",money(t.liabilities),"Cards, loans &amp; margin")}
+        ${stat("Income",money(t.income),"This fortnight")}
+        ${stat("Expenses",money(t.expenses),"This fortnight")}
+        ${stat("Saved",signed(t.cashflow),"Savings rate "+rate.toFixed(0)+"%",t.cashflow>=0?"pos":"neg")}
+      </div>
+
+      <div class="panel-row">
+        <div class="card">
+          <div class="panel-head"><h3>Income vs. expenses</h3><span class="hint">last ${Math.min(periods.length,10)} fortnights</span></div>
+          ${incomeExpenseChart(periods.slice(-10))}
+        </div>
+        <div class="card">
+          <div class="panel-head"><h3>Where it sits</h3><span class="hint">assets by type</span></div>
+          ${donut(assetGroups.map(g=>({label:GROUPS[g].label,value:bd[g],color:GROUPS[g].color})).filter(d=>d.value>0))}
+        </div>
+      </div>
+
+      <div class="panel-row" style="margin-top:18px">
+        <div class="card">
+          <div class="panel-head"><h3>Top expenses</h3><span class="hint">this fortnight</span></div>
+          ${topExpenses(latest)}
+        </div>
+        <div class="card">
+          <div class="panel-head"><h3>Quick actions</h3></div>
+          <div class="btn-row">
+            <button class="btn primary" id="qa-new">Record this fortnight</button>
+            <button class="btn" id="qa-hist">View history</button>
+          </div>
+          <p class="muted" style="font-size:13px;margin-top:14px">New snapshots pre-fill from your last one, so you only change what moved.</p>
+        </div>
+      </div>
+    `;
+    $("#qa-new").onclick=()=>setView("snapshot");
+    $("#qa-hist").onclick=()=>setView("history");
+  }
+
+  function stat(k,v,sub,cls){
+    return `<div class="stat"><div class="k">${k}</div><div class="v ${cls||""}">${v}</div>${sub?`<div class="sub">${sub}</div>`:""}</div>`;
+  }
+
+  // ---------- charts (inline SVG) ----------
+  function lineChart(data){
+    if(data.length===0)return emptyChart();
+    const W=560,H=210,pad={l:54,r:16,t:16,b:30};
+    const xs=W-pad.l-pad.r, ys=H-pad.t-pad.b;
+    const vals=data.map(d=>d.value);
+    let min=Math.min(...vals,0),max=Math.max(...vals,0);
+    if(min===max){max=min+1;}
+    const pX=i=>pad.l+(data.length===1?xs/2:xs*i/(data.length-1));
+    const pY=v=>pad.t+ys-((v-min)/(max-min))*ys;
+    let path="",area="";
+    data.forEach((d,i)=>{const x=pX(i),y=pY(d.value);path+=(i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1)+" ";});
+    area=path+`L${pX(data.length-1).toFixed(1)} ${(pad.t+ys).toFixed(1)} L${pX(0).toFixed(1)} ${(pad.t+ys).toFixed(1)} Z`;
+    // gridlines (3)
+    let grid="";const ticks=3;
+    for(let i=0;i<=ticks;i++){const v=min+(max-min)*i/ticks;const y=pY(v);
+      grid+=`<line x1="${pad.l}" y1="${y.toFixed(1)}" x2="${W-pad.r}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;
+      grid+=`<text x="${pad.l-8}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--ink-3)">${money(v)}</text>`;
+    }
+    let dots="",labels="";
+    data.forEach((d,i)=>{const x=pX(i),y=pY(d.value);
+      dots+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="var(--surface)" stroke="var(--green)" stroke-width="2"><title>${escapeHtml(d.label)}: ${money(d.value)}</title></circle>`;
+    });
+    const step=Math.ceil(data.length/6);
+    data.forEach((d,i)=>{if(i%step===0||i===data.length-1){const x=pX(i);
+      labels+=`<text x="${x.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--ink-3)">${escapeHtml(d.label)}</text>`;}});
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Net worth trend">
+      ${grid}
+      <path d="${area}" fill="var(--green-soft)" opacity="0.7"/>
+      <path d="${path}" fill="none" stroke="var(--green)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}${labels}
+    </svg>`;
+  }
+
+  function incomeExpenseChart(periods){
+    if(!periods.length)return emptyChart();
+    const W=540,H=210,pad={l:48,r:12,t:14,b:30};
+    const xs=W-pad.l-pad.r, ys=H-pad.t-pad.b;
+    const max=Math.max(1,...periods.map(p=>{const t=periodTotals(p);return Math.max(t.income,t.expenses);}));
+    const slot=xs/periods.length;
+    const bw=Math.min(18,slot*0.32);
+    let grid="";const ticks=3;
+    for(let i=0;i<=ticks;i++){const v=max*i/ticks;const y=pad.t+ys-(v/max)*ys;
+      grid+=`<line x1="${pad.l}" y1="${y.toFixed(1)}" x2="${W-pad.r}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;
+      grid+=`<text x="${pad.l-8}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--ink-3)">${money(v)}</text>`;}
+    let bars="",labels="";
+    periods.forEach((p,i)=>{const t=periodTotals(p);
+      const cx=pad.l+slot*i+slot/2;
+      const ih=(t.income/max)*ys, eh=(t.expenses/max)*ys;
+      const ix=cx-bw-1, ex=cx+1;
+      bars+=`<rect x="${ix.toFixed(1)}" y="${(pad.t+ys-ih).toFixed(1)}" width="${bw}" height="${ih.toFixed(1)}" rx="2" fill="var(--green)"><title>${fmtShort(p.end)} income: ${money(t.income)}</title></rect>`;
+      bars+=`<rect x="${ex.toFixed(1)}" y="${(pad.t+ys-eh).toFixed(1)}" width="${bw}" height="${eh.toFixed(1)}" rx="2" fill="var(--clay)"><title>${fmtShort(p.end)} expenses: ${money(t.expenses)}</title></rect>`;
+      labels+=`<text x="${cx.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--ink-3)">${escapeHtml(fmtShort(p.end))}</text>`;
+    });
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Income versus expenses">${grid}${bars}${labels}</svg>
+      <ul class="legend" style="flex-direction:row;gap:18px;margin-top:8px">
+        <li><span class="sw" style="background:var(--green)"></span>Income</li>
+        <li><span class="sw" style="background:var(--clay)"></span>Expenses</li>
+      </ul>`;
+  }
+
+  function donut(data){
+    const total=data.reduce((s,d)=>s+d.value,0);
+    if(total<=0)return `<p class="muted" style="font-size:14px">No asset balances recorded for this fortnight yet.</p>`;
+    const R=70,r=44,cx=84,cy=84;let a=-Math.PI/2;
+    let arcs="";
+    data.forEach(d=>{const frac=d.value/total;const a2=a+frac*Math.PI*2;
+      const x1=cx+R*Math.cos(a),y1=cy+R*Math.sin(a),x2=cx+R*Math.cos(a2),y2=cy+R*Math.sin(a2);
+      const xi2=cx+r*Math.cos(a2),yi2=cy+r*Math.sin(a2),xi1=cx+r*Math.cos(a),yi1=cy+r*Math.sin(a);
+      const large=frac>0.5?1:0;
+      arcs+=`<path d="M${x1.toFixed(2)} ${y1.toFixed(2)} A${R} ${R} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} L${xi2.toFixed(2)} ${yi2.toFixed(2)} A${r} ${r} 0 ${large} 0 ${xi1.toFixed(2)} ${yi1.toFixed(2)} Z" fill="${d.color}"><title>${escapeHtml(d.label)}: ${money(d.value)} (${(frac*100).toFixed(0)}%)</title></path>`;
+      a=a2;
+    });
+    const legend=data.map(d=>`<li><span class="sw" style="background:${d.color}"></span>${escapeHtml(d.label)}<span class="amt">${money(d.value)}</span><span class="pct">${(d.value/total*100).toFixed(0)}%</span></li>`).join("");
+    return `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <svg width="168" height="168" viewBox="0 0 168 168" role="img" aria-label="Asset allocation" style="flex:none">${arcs}
+        <text x="84" y="80" text-anchor="middle" font-size="11" fill="var(--ink-3)">Assets</text>
+        <text x="84" y="96" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">${money(total)}</text>
+      </svg>
+      <ul class="legend" style="flex:1;min-width:180px">${legend}</ul>
+    </div>`;
+  }
+
+  function topExpenses(p){
+    const map={};(p.expenses||[]).forEach(r=>{const k=r.category||"Other";map[k]=(map[k]||0)+n(r.amount);});
+    const rows=Object.entries(map).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v).slice(0,6);
+    if(!rows.length)return `<p class="muted" style="font-size:14px">No expenses logged this fortnight.</p>`;
+    const max=Math.max(...rows.map(r=>r.v));
+    return `<div class="bars">${rows.map(r=>`
+      <div class="bar-row">
+        <span>${escapeHtml(r.k)}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${(r.v/max*100).toFixed(1)}%;background:var(--clay)"></span></span>
+        <span class="bar-amt">${money(r.v)}</span>
+      </div>`).join("")}</div>`;
+  }
+
+  function emptyChart(){return `<p class="muted" style="font-size:14px;padding:20px 0">Not enough data yet.</p>`;}
+
+  // ====================================================
+  //  SNAPSHOT (new / edit)
+  // ====================================================
+  function startNewSnapshot(){
+    const periods=sortedPeriods();
+    const last=periods[periods.length-1];
+    let start,end;
+    if(last){start=isoOffset(parseDate(last.end),1);end=isoOffset(parseDate(start),13);}
+    else{end=todayIso();start=isoOffset(parseDate(end),-13);}
+    draft={
+      id:uid(),start,end,
+      balances:last?clone(last.balances||{}):{},
+      loans:last?clone(last.loans||{}):{},
+      income:[],expenses:[],note:""
+    };
+    editingId=null;
+    collapsed={};
+  }
+  function editSnapshot(id){
+    const p=state.periods.find(x=>x.id===id);if(!p)return;
+    draft=clone(p);
+    draft.balances=draft.balances||{};draft.loans=draft.loans||{};
+    draft.income=draft.income||[];draft.expenses=draft.expenses||[];
+    editingId=id;collapsed={};
+    setView("snapshot");
+  }
+
+  function draftTotals(){
+    return periodTotals(draft);
+  }
+
+  function renderSnapshot(){
+    if(!draft)startNewSnapshot();
+    const isEdit=!!editingId;
+    let sections="";
+    GROUP_ORDER.forEach(g=>{
+      const accts=state.accounts.filter(a=>a.group===g);
+      if(!accts.length)return;
+      const sum=accts.reduce((s,a)=>s+n(draft.balances[a.id]),0);
+      const isCollapsed=collapsed[g];
+      sections+=`
+      <div class="section-block ${isCollapsed?"collapsed":""}" data-group="${g}">
+        <button type="button" class="section-head" data-toggle="${g}">
+          <span class="tag" style="background:${GROUPS[g].color}"></span>
+          ${GROUPS[g].label}
+          <span class="sum">${GROUPS[g].kind==="liability"?"owe ":""}${money(sum)}</span>
+          <span class="caret">▾</span>
+        </button>
+        <div class="section-body">
+          ${accts.map(a=>{
+            const label=GROUPS[g].kind==="liability"?"Balance owed":(g==="property"?"Estimated value":"Balance");
+            let html=`<div class="acct-line">
+              <div class="acct-name">${escapeHtml(a.name)}<small>${label}</small></div>
+              <div class="money-input"><input type="number" inputmode="decimal" step="0.01" data-bal="${a.id}" value="${draft.balances[a.id]!=null?escapeHtml(String(draft.balances[a.id])):""}" placeholder="0"></div>
+            </div>`;
+            if(a.margin){
+              html+=`<div class="margin-note">Margin account — in <b>Balance</b> enter your <b>total portfolio value</b> (all holdings, including shares bought with borrowed funds). In <b>Margin loan balance</b> enter what you owe. Net worth = value − loan = your real equity. Don't put your equity in Balance <i>and</i> a loan amount, or the debt gets counted twice. Log the actual interest Robinhood charges you as a <b>Margin interest</b> expense.</div>
+              <div class="acct-line">
+                <div class="acct-name">↳ Margin loan balance<small>Borrowed against this account</small></div>
+                <div class="money-input"><input type="number" inputmode="decimal" step="0.01" data-loan="${a.id}" value="${draft.loans[a.id]!=null?escapeHtml(String(draft.loans[a.id])):""}" placeholder="0"></div>
+              </div>`;
+            }
+            return html;
+          }).join("")}
+        </div>
+      </div>`;
+    });
+
+    main().innerHTML=`
+      <div class="panel-head" style="margin-bottom:6px">
+        <h2 style="font-family:var(--serif);font-size:26px">${isEdit?"Edit fortnight":"New fortnight"}</h2>
+      </div>
+      <p class="help">Enter where each account stands at the <b>end</b> of this two-week period. Balances pre-fill from your last snapshot — just update what changed. Everyday spending usually flows through a credit card, so a card's balance here is what you still owe; log the actual spending under <b>Expenses</b> and your card <b>payments</b> simply move money from a bank to the card (no need to log those as expenses).</p>
+
+      <div class="card" style="margin-bottom:18px">
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;max-width:420px">
+          <div class="field"><label for="d-start">Period start</label><input type="date" id="d-start" value="${draft.start}"></div>
+          <div class="field"><label for="d-end">Period end</label><input type="date" id="d-end" value="${draft.end}"></div>
+        </div>
+      </div>
+
+      <h3 class="eyebrow" style="margin:0 0 10px">Account balances</h3>
+      ${sections}
+
+      <div class="section-block" style="margin-top:22px">
+        <div class="section-head" style="cursor:default">
+          <span class="tag" style="background:var(--green)"></span> Income this fortnight
+          <span class="sum" id="inc-sum">${money(draft.income.reduce((s,r)=>s+n(r.amount),0))}</span>
+        </div>
+        <div class="section-body">
+          <div class="line-list" id="income-list">${draft.income.map(r=>lineRow(r,"income")).join("")}</div>
+          <button class="btn sm" id="add-income" style="margin-top:10px">+ Add income</button>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <div class="section-head" style="cursor:default">
+          <span class="tag" style="background:var(--clay)"></span> Expenses this fortnight
+          <span class="sum" id="exp-sum">${money(draft.expenses.reduce((s,r)=>s+n(r.amount),0))}</span>
+        </div>
+        <div class="section-body">
+          <div class="line-list" id="expense-list">${draft.expenses.map(r=>lineRow(r,"expense")).join("")}</div>
+          <button class="btn sm" id="add-expense" style="margin-top:10px">+ Add expense</button>
+        </div>
+      </div>
+
+      <div class="sticky-actions">
+        <div class="summary">Net worth this fortnight: <b id="live-net">${money(draftTotals().net)}</b></div>
+        ${isEdit?`<button class="btn danger" id="snap-delete">Delete</button>`:""}
+        <button class="btn ghost" id="snap-cancel">Cancel</button>
+        <button class="btn primary" id="snap-save">${isEdit?"Save changes":"Save fortnight"}</button>
+      </div>
+
+      <datalist id="income-cats">${INCOME_CATS.map(c=>`<option value="${c}">`).join("")}</datalist>
+      <datalist id="expense-cats">${EXPENSE_CATS.map(c=>`<option value="${c}">`).join("")}</datalist>
+    `;
+
+    wireSnapshot();
+  }
+
+  function lineRow(r,kind){
+    const list=kind==="income"?"income-cats":"expense-cats";
+    return `<div class="line-item" data-row="${r.id}">
+      <input type="text" list="${list}" data-field="category" value="${escapeHtml(r.category||"")}" placeholder="${kind==="income"?"Source (e.g. Paycheck)":"Category"}">
+      <div class="money-input"><input type="number" inputmode="decimal" step="0.01" data-field="amount" value="${r.amount!=null?escapeHtml(String(r.amount)):""}" placeholder="0"></div>
+      <button class="icon-btn" data-remove="${r.id}" data-kind="${kind}" title="Remove">✕</button>
+    </div>`;
+  }
+
+  function wireSnapshot(){
+    $("#d-start").onchange=e=>{draft.start=e.target.value;};
+    $("#d-end").onchange=e=>{draft.end=e.target.value;};
+
+    main().querySelectorAll("[data-toggle]").forEach(b=>{
+      b.onclick=()=>{const g=b.dataset.toggle;collapsed[g]=!collapsed[g];
+        b.closest(".section-block").classList.toggle("collapsed",collapsed[g]);};
+    });
+
+    main().querySelectorAll("[data-bal]").forEach(inp=>{
+      inp.oninput=e=>{draft.balances[inp.dataset.bal]=e.target.value;refreshSectionSum(acctById(inp.dataset.bal).group);updateLiveNet();};
+    });
+    main().querySelectorAll("[data-loan]").forEach(inp=>{
+      inp.oninput=e=>{draft.loans[inp.dataset.loan]=e.target.value;updateLiveNet();};
+    });
+
+    $("#add-income").onclick=()=>{draft.income.push({id:uid(),category:"",amount:""});appendRow("income");};
+    $("#add-expense").onclick=()=>{draft.expenses.push({id:uid(),category:"",amount:""});appendRow("expense");};
+
+    wireLineList("income");
+    wireLineList("expense");
+
+    if($("#snap-delete"))$("#snap-delete").onclick=()=>{
+      if(confirm("Delete this fortnight permanently?")){
+        state.periods=state.periods.filter(p=>p.id!==editingId);
+        save();draft=null;editingId=null;toast("Fortnight deleted");setView("history");
+      }
+    };
+    $("#snap-cancel").onclick=()=>{const back=editingId?"history":"dashboard";draft=null;editingId=null;setView(back);};
+    $("#snap-save").onclick=saveSnapshot;
+  }
+
+  function appendRow(kind){
+    const listEl=$("#"+kind+"-list");
+    const arr=kind==="income"?draft.income:draft.expenses;
+    const r=arr[arr.length-1];
+    const div=document.createElement("div");
+    div.innerHTML=lineRow(r,kind).trim();
+    listEl.appendChild(div.firstChild);
+    wireLineList(kind);
+    const last=listEl.lastElementChild;if(last)last.querySelector("input").focus();
+  }
+
+  function wireLineList(kind){
+    const arr=kind==="income"?draft.income:draft.expenses;
+    const listEl=$("#"+kind+"-list");
+    listEl.querySelectorAll("[data-row]").forEach(row=>{
+      const id=row.dataset.row;const rec=arr.find(x=>x.id===id);if(!rec)return;
+      row.querySelectorAll("[data-field]").forEach(inp=>{
+        inp.oninput=e=>{rec[inp.dataset.field]=e.target.value;refreshLineSum(kind);updateLiveNet();};
+      });
+      const rm=row.querySelector("[data-remove]");
+      rm.onclick=()=>{
+        if(kind==="income")draft.income=draft.income.filter(x=>x.id!==id);
+        else draft.expenses=draft.expenses.filter(x=>x.id!==id);
+        row.remove();refreshLineSum(kind);updateLiveNet();
+      };
+    });
+  }
+
+  function refreshSectionSum(g){
+    const accts=state.accounts.filter(a=>a.group===g);
+    const sum=accts.reduce((s,a)=>s+n(draft.balances[a.id]),0);
+    const head=main().querySelector(`[data-group="${g}"] .sum`);
+    if(head)head.textContent=(GROUPS[g].kind==="liability"?"owe ":"")+money(sum);
+  }
+  function refreshLineSum(kind){
+    const arr=kind==="income"?draft.income:draft.expenses;
+    const sum=arr.reduce((s,r)=>s+n(r.amount),0);
+    const el=$(kind==="income"?"#inc-sum":"#exp-sum");if(el)el.textContent=money(sum);
+  }
+  function updateLiveNet(){const el=$("#live-net");if(el)el.textContent=money(draftTotals().net);}
+
+  function saveSnapshot(){
+    if(!draft.start||!draft.end){toast("Pick a start and end date");return;}
+    if(parseDate(draft.end)<parseDate(draft.start)){toast("End date is before start date");return;}
+    // clean numeric fields to numbers
+    const clean=clone(draft);
+    Object.keys(clean.balances).forEach(k=>{clean.balances[k]=n(clean.balances[k]);});
+    Object.keys(clean.loans).forEach(k=>{clean.loans[k]=n(clean.loans[k]);});
+    clean.income=clean.income.filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Income",amount:n(r.amount)}));
+    clean.expenses=clean.expenses.filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Expense",amount:n(r.amount)}));
+    const idx=state.periods.findIndex(p=>p.id===clean.id);
+    if(idx>=0)state.periods[idx]=clean;else state.periods.push(clean);
+    save();
+    toast(editingId?"Changes saved":"Fortnight saved");
+    draft=null;editingId=null;
+    setView("dashboard");
+  }
+
+  // ====================================================
+  //  HISTORY
+  // ====================================================
+  function renderHistory(){
+    const periods=sortedPeriods();
+    if(!periods.length){
+      main().innerHTML=`<div class="empty card"><div class="mk">◷</div><h3>No fortnights yet</h3>
+      <p>Once you record snapshots, they line up here so you can see every two-week step.</p>
+      <button class="btn primary" id="h-new">Record a fortnight</button></div>`;
+      $("#h-new").onclick=()=>setView("snapshot");return;
+    }
+    let rows="";
+    for(let i=periods.length-1;i>=0;i--){
+      const p=periods[i];const t=periodTotals(p);
+      const prev=i>0?periodTotals(periods[i-1]):null;
+      const d=prev?t.net-prev.net:0;
+      const rate=t.income>0?(t.cashflow/t.income)*100:0;
+      rows+=`<tr data-edit="${p.id}">
+        <td>${fmtDate(p.start)} – ${fmtDate(p.end)}</td>
+        <td class="num">${money(t.net)}</td>
+        <td class="num ${d>=0?"pos":"neg"}">${prev?signed(d):"—"}</td>
+        <td class="num pos">${money(t.income)}</td>
+        <td class="num neg">${money(t.expenses)}</td>
+        <td class="num ${t.cashflow>=0?"pos":"neg"}">${signed(t.cashflow)}</td>
+        <td><span class="rate-pill">${t.income>0?rate.toFixed(0)+"%":"—"}</span></td>
+      </tr>`;
+    }
+    main().innerHTML=`
+      <div class="panel-head" style="margin-bottom:10px"><h2 style="font-family:var(--serif);font-size:26px">History</h2></div>
+      <div class="toolbar">
+        <button class="btn primary" id="h-new">+ New fortnight</button>
+        <span class="spacer"></span>
+        <button class="btn sm" id="h-csv">Export CSV</button>
+        <button class="btn sm" id="h-json">Back up (JSON)</button>
+        <button class="btn sm" id="h-import">Restore</button>
+        <button class="btn sm danger" id="h-reset">Reset all</button>
+        <input type="file" id="h-file" accept="application/json" style="display:none">
+      </div>
+      <p class="muted" style="font-size:13px;margin:-6px 0 14px">Click any row to view or edit that fortnight.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Period</th><th>Net worth</th><th>Δ vs prior</th><th>Income</th><th>Expenses</th><th>Saved</th><th>Rate</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    `;
+    main().querySelectorAll("[data-edit]").forEach(tr=>tr.onclick=()=>editSnapshot(tr.dataset.edit));
+    $("#h-new").onclick=()=>setView("snapshot");
+    $("#h-csv").onclick=exportCsv;
+    $("#h-json").onclick=exportJson;
+    $("#h-import").onclick=()=>$("#h-file").click();
+    $("#h-file").onchange=importJson;
+    $("#h-reset").onclick=resetAll;
+  }
+
+  function exportCsv(){
+    const periods=sortedPeriods();
+    const head=["Start","End","Net worth","Assets","Liabilities","Income","Expenses","Saved"];
+    const lines=[head.join(",")];
+    periods.forEach(p=>{const t=periodTotals(p);
+      lines.push([p.start,p.end,t.net,t.assets,t.liabilities,t.income,t.expenses,t.cashflow].join(","));});
+    download("fortnight-history.csv",lines.join("\n"),"text/csv");
+    toast("CSV exported");
+  }
+  function exportJson(){download("fortnight-backup.json",JSON.stringify(state,null,2),"application/json");toast("Backup downloaded");}
+  function download(name,content,type){
+    const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=name;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function importJson(e){
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{const parsed=JSON.parse(reader.result);
+        if(!parsed.accounts||!parsed.periods)throw new Error("bad");
+        if(!confirm("Restore from backup? This replaces your current data."))return;
+        state.accounts=parsed.accounts;state.periods=parsed.periods;
+        save();toast("Data restored");setView("dashboard");
+      }catch(err){toast("That file isn't a valid Fortnight backup");}
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  }
+  function resetAll(){
+    if(!confirm("Erase ALL snapshots and reset accounts to the default list? This can't be undone — export a backup first if unsure."))return;
+    state.accounts=clone(SEED_ACCOUNTS);state.periods=[];draft=null;editingId=null;
+    save();toast("Everything reset");setView("dashboard");
+  }
+
+  // ====================================================
+  //  ACCOUNTS
+  // ====================================================
+  function renderAccounts(){
+    let sections="";
+    GROUP_ORDER.forEach(g=>{
+      const accts=state.accounts.filter(a=>a.group===g);
+      sections+=`<div class="card" style="margin-bottom:16px">
+        <div class="panel-head"><h3 style="display:flex;align-items:center;gap:9px"><span class="tag" style="width:11px;height:11px;border-radius:3px;background:${GROUPS[g].color};display:inline-block"></span>${GROUPS[g].label}</h3>
+        <span class="hint">${accts.length} account${accts.length!==1?"s":""}</span></div>
+        ${accts.map(a=>`
+          <div class="acct-edit" data-acct="${a.id}">
+            <input type="text" data-name="${a.id}" value="${escapeHtml(a.name)}">
+            <select data-group="${a.id}">${GROUP_ORDER.map(gg=>`<option value="${gg}" ${gg===a.group?"selected":""}>${GROUPS[gg].label}</option>`).join("")}</select>
+            <label class="check"><input type="checkbox" data-margin="${a.id}" ${a.margin?"checked":""}> Margin</label>
+            <button class="btn sm danger" data-del="${a.id}">Remove</button>
+          </div>`).join("")||`<p class="muted" style="font-size:14px">No accounts in this group.</p>`}
+      </div>`;
+    });
+    main().innerHTML=`
+      <div class="panel-head" style="margin-bottom:10px"><h2 style="font-family:var(--serif);font-size:26px">Accounts</h2></div>
+      <p class="help">These are pre-loaded from what you listed. Rename, regroup, or remove any of them, and add new ones below. Changes apply to future snapshots; past snapshots keep whatever you already recorded. Check <b>Margin</b> on any account where you borrow and pay interest.</p>
+      ${sections}
+      <div class="card">
+        <h3 style="font-size:16px;margin-bottom:12px">Add an account</h3>
+        <div class="add-acct">
+          <div class="field"><label>Name</label><input type="text" id="na-name" placeholder="e.g. Marcus Savings"></div>
+          <div class="field"><label>Group</label><select id="na-group">${GROUP_ORDER.map(g=>`<option value="${g}">${GROUPS[g].label}</option>`).join("")}</select></div>
+          <label class="check" style="padding-bottom:10px"><input type="checkbox" id="na-margin"> Margin</label>
+          <button class="btn primary" id="na-add">Add account</button>
+        </div>
+      </div>
+    `;
+    main().querySelectorAll("[data-name]").forEach(inp=>inp.onchange=e=>{acctById(inp.dataset.name).name=e.target.value.trim()||"Account";save(true);});
+    main().querySelectorAll("[data-group]").forEach(sel=>sel.onchange=e=>{acctById(sel.dataset.group).group=e.target.value;save(true);renderAccounts();});
+    main().querySelectorAll("[data-margin]").forEach(chk=>chk.onchange=e=>{acctById(chk.dataset.margin).margin=e.target.checked;save(true);});
+    main().querySelectorAll("[data-del]").forEach(btn=>btn.onclick=()=>{
+      const a=acctById(btn.dataset.del);
+      if(confirm(`Remove "${a.name}"? Past snapshots keep their recorded values, but this account won't appear in new ones.`)){
+        state.accounts=state.accounts.filter(x=>x.id!==btn.dataset.del);save();renderAccounts();toast("Account removed");
+      }
+    });
+    $("#na-add").onclick=()=>{
+      const name=$("#na-name").value.trim();if(!name){toast("Give the account a name");return;}
+      state.accounts.push({id:uid(),name,group:$("#na-group").value,margin:$("#na-margin").checked});
+      save();renderAccounts();toast("Account added");
+    };
+  }
+
+  // ====================================================
+  //  SYNC & BACKUP
+  // ====================================================
+  function renderSync(){
+    const connected=driveConnected;
+    main().innerHTML=`
+      <div class="panel-head" style="margin-bottom:10px"><h2 style="font-family:var(--serif);font-size:26px">Sync &amp; backup</h2></div>
+      <p class="help">Connect your <b>Google Drive</b> to keep this history in your own account, so it shows up on any device where you sign in with the same Google login. Your data lives in a private, app-only folder in your Drive — this tool can't see anything else in there.</p>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="panel-head"><h3>Google Drive</h3><span class="hint">${connected?'<span class="pos">● Connected</span>':'<span class="muted">Not connected</span>'}</span></div>
+        <div class="field" style="margin-bottom:12px">
+          <label for="g-client">Your Google OAuth Client ID</label>
+          <input type="text" id="g-client" value="${escapeHtml(gClientId)}" placeholder="1234567890-abc….apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="btn-row">
+          <button class="btn sm" id="g-saveid">Save Client ID</button>
+          ${connected
+            ? `<button class="btn primary sm" id="g-syncnow">Sync now</button><button class="btn danger sm" id="g-disconnect">Disconnect</button>`
+            : `<button class="btn primary sm" id="g-connect">Sign in with Google &amp; connect</button>`}
+        </div>
+        ${connected?`<p class="muted" style="font-size:13px;margin:12px 0 0">${lastSync?"Last synced "+new Date(lastSync).toLocaleString():"Connected."} Changes save here and push to Drive automatically; this tool also pulls the latest each time it opens.</p>`:""}
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="panel-head"><h3>One-time setup (≈10 min, free)</h3></div>
+        <ol class="muted" style="font-size:14px;line-height:1.7;padding-left:20px;margin:0">
+          <li>Go to <b>console.cloud.google.com</b> and create a project (any name).</li>
+          <li>In <b>APIs &amp; Services → Library</b>, search <b>Google Drive API</b> and click <b>Enable</b>.</li>
+          <li>In <b>APIs &amp; Services → OAuth consent screen</b>: choose <b>External</b>, fill the app name + your email, and under <b>Test users</b> add your own Google address. Save.</li>
+          <li>In <b>APIs &amp; Services → Credentials → Create credentials → OAuth client ID</b>: type <b>Web application</b>. Under <b>Authorized JavaScript origins</b>, add the exact address where this page is hosted (e.g. <code>https://yourname.github.io</code>) — no trailing slash. Create.</li>
+          <li>Copy the <b>Client ID</b> (ends in <code>.apps.googleusercontent.com</code>), paste it in the box above, hit <b>Save Client ID</b>, then <b>Sign in with Google &amp; connect</b>.</li>
+        </ol>
+        <p class="muted" style="font-size:13px;margin:12px 0 0">The Client ID is safe to keep in the page — it's public by design. You never enter a password here, and sign-in happens on Google's own screen. Note: Google sign-in only works on the hosted address you authorized, not a file opened directly off your computer.</p>
+      </div>
+
+      <div class="card">
+        <div class="panel-head"><h3>Manual backup</h3><span class="hint">works anytime</span></div>
+        <p class="muted" style="font-size:13px;margin:0 0 12px">A downloadable copy of everything — keep one now and then, and use Restore to move data by hand.</p>
+        <div class="btn-row">
+          <button class="btn sm" id="s-json">Back up (JSON)</button>
+          <button class="btn sm" id="s-import">Restore</button>
+          <button class="btn sm" id="s-csv">Export CSV</button>
+          <input type="file" id="s-file" accept="application/json" style="display:none">
+        </div>
+      </div>
+    `;
+    $("#g-saveid").onclick=()=>{gClientId=$("#g-client").value.trim();lsSet(GKEY_CLIENT,gClientId);tokenClient=null;toast("Client ID saved");};
+    if($("#g-connect"))$("#g-connect").onclick=()=>{gClientId=$("#g-client").value.trim();lsSet(GKEY_CLIENT,gClientId);connectDrive();};
+    if($("#g-syncnow"))$("#g-syncnow").onclick=syncNow;
+    if($("#g-disconnect"))$("#g-disconnect").onclick=()=>{if(confirm("Disconnect Google Drive on this device? Your data stays in Drive; this device will keep its local copy."))disconnectDrive();};
+    $("#s-json").onclick=exportJson;
+    $("#s-import").onclick=()=>$("#s-file").click();
+    $("#s-file").onchange=importJson;
+    $("#s-csv").onclick=exportCsv;
+  }
+
+  // ---------- boot ----------
+  load();
+})();
+</script>
+
+</body>
+</html>
