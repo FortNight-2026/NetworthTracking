@@ -297,11 +297,11 @@
   const GROUP_ORDER=["cash","brokerage","crypto","retirement","hsa","property","credit","loans"];
 
   const SEED_ACCOUNTS=[
-    {id:"sofi_chk",name:"SoFi Joint Checking",group:"cash"},
-    {id:"sofi_sav",name:"SoFi Joint Savings",group:"cash"},
+    {id:"sofi_chk",name:"SoFi Checking",group:"cash"},
+    {id:"sofi_sav",name:"SoFi Savings",group:"cash"},
     {id:"chase_chk",name:"Chase Checking",group:"cash"},
-    {id:"chase_sav1",name:"Chase Joint Checking (....5929)",group:"cash"},
-    {id:"chase_sav2",name:"Chase Savings (....3952)",group:"cash"},
+    {id:"chase_sav1",name:"Chase Savings 1",group:"cash"},
+    {id:"chase_sav2",name:"Chase Savings 2",group:"cash"},
     {id:"ally_chk",name:"Ally Checking",group:"cash"},
     {id:"ally_sav",name:"Ally Savings",group:"cash"},
     {id:"capone_sav",name:"Capital One Savings",group:"cash"},
@@ -327,6 +327,7 @@
 
   const EXPENSE_CATS=["Mortgage / housing","Rent","Groceries (Walmart)","Groceries (Indian store)","Groceries (other)","Fast food / dining out","Electricity","Water","Gas (home)","Gas (car)","Internet","Phone","Car insurance","Car payment","Health / medical","Subscriptions","Shopping","Travel","Margin interest","Fees / interest","Other"];
   const INCOME_CATS=["Paycheck","Bonus","Dividends","Interest","Side income","Refund","Other"];
+  const CONTRIB_CATS=["Robinhood (Margin)","Robinhood","SoFi Invest","Webull","Vanguard","Fidelity Individual","Coinbase","Fidelity IRA","401(k) — Schwab","401(k) — Transamerica","Fidelity HSA","Inspira HSA","Other"];
 
   // ---------- state ----------
   let state={accounts:[],periods:[]};
@@ -370,8 +371,16 @@
     if(p.loans) Object.keys(p.loans).forEach(id=>{liabilities+=n(p.loans[id]);});
     const income=(p.income||[]).reduce((s,r)=>s+n(r.amount),0);
     const expenses=(p.expenses||[]).reduce((s,r)=>s+n(r.amount),0);
+    const contributions=(p.contributions||[]).reduce((s,r)=>s+n(r.amount),0);
     const net=assets-liabilities;
-    return {assets,liabilities,net,income,expenses,cashflow:income-expenses};
+    return {assets,liabilities,net,income,expenses,contributions,cashflow:income-expenses};
+  }
+  // market growth/loss implied by the change in net worth once contributions (money you moved in,
+  // not new wealth) are backed out. Needs the prior period to mean anything.
+  function impliedGrowth(curr,prevTotals){
+    if(!prevTotals)return null;
+    const deltaNet=curr.net-prevTotals.net;
+    return deltaNet-curr.cashflow; // contributions are a wash (cash out, investment in) so they net to ~0 here automatically
   }
   function groupBreakdown(p){
     const out={};GROUP_ORDER.forEach(g=>out[g]=0);
@@ -380,7 +389,7 @@
   }
 
   // ---------- persistence (local cache + Google Drive sync) ----------
-  const CURRENT_VERSION=2;
+  const CURRENT_VERSION=3;
   const hasCloud=(typeof window!=="undefined")&&window.storage&&typeof window.storage.get==="function"&&typeof window.storage.set==="function";
   let storageMode=hasCloud?"cloud":"local";
 
@@ -401,6 +410,9 @@
     if((state.version||1)<2){
       if(!state.accounts.some(a=>a.id==="home")){state.accounts.push({id:"home",name:"Home (market value)",group:"property"});changed=true;}
       if(!state.accounts.some(a=>a.id==="mortgage")){state.accounts.push({id:"mortgage",name:"Mortgage — US Bank",group:"loans"});changed=true;}
+    }
+    if((state.version||1)<3){
+      state.periods.forEach(p=>{if(!Array.isArray(p.contributions)){p.contributions=[];changed=true;}});
     }
     state.version=CURRENT_VERSION;
     if(changed)saveLocal();
@@ -638,6 +650,7 @@
     const deltaPct=tp&&tp.net!==0?(deltaAbs/Math.abs(tp.net))*100:0;
     const up=deltaAbs>=0;
     const rate=t.income>0?(t.cashflow/t.income)*100:0;
+    const growth=tp?impliedGrowth(t,tp):null;
 
     const bd=groupBreakdown(latest);
     const assetGroups=GROUP_ORDER.filter(g=>GROUPS[g].kind==="asset");
@@ -657,6 +670,7 @@
               <span class="muted">vs. previous fortnight</span>`
             :`<span class="muted">First snapshot — your baseline.</span>`}
           </div>
+          ${prev?`<div class="muted" style="font-size:12.5px;margin-top:8px">Of that, <b class="${growth>=0?'pos':'neg'}">${signed(growth)}</b> looks like market movement — the rest is cash you saved or added.</div>`:""}
         </div>
         <div class="card">
           <div class="panel-head"><h3>Net worth over time</h3><span class="hint">${periods.length} snapshot${periods.length>1?"s":""}</span></div>
@@ -669,6 +683,7 @@
         ${stat("Liabilities",money(t.liabilities),"Cards, loans &amp; margin")}
         ${stat("Income",money(t.income),"This fortnight")}
         ${stat("Expenses",money(t.expenses),"This fortnight")}
+        ${stat("Added to investing",money(t.contributions),"This fortnight")}
         ${stat("Saved",signed(t.cashflow),"Savings rate "+rate.toFixed(0)+"%",t.cashflow>=0?"pos":"neg")}
       </div>
 
@@ -817,7 +832,7 @@
       id:uid(),start,end,
       balances:last?clone(last.balances||{}):{},
       loans:last?clone(last.loans||{}):{},
-      income:[],expenses:[],note:""
+      income:[],expenses:[],contributions:[],note:""
     };
     editingId=null;
     collapsed={};
@@ -826,7 +841,7 @@
     const p=state.periods.find(x=>x.id===id);if(!p)return;
     draft=clone(p);
     draft.balances=draft.balances||{};draft.loans=draft.loans||{};
-    draft.income=draft.income||[];draft.expenses=draft.expenses||[];
+    draft.income=draft.income||[];draft.expenses=draft.expenses||[];draft.contributions=draft.contributions||[];
     editingId=id;collapsed={};
     setView("snapshot");
   }
@@ -876,7 +891,7 @@
       <div class="panel-head" style="margin-bottom:6px">
         <h2 style="font-family:var(--serif);font-size:26px">${isEdit?"Edit fortnight":"New fortnight"}</h2>
       </div>
-      <p class="help">Enter where each account stands at the <b>end</b> of this two-week period. Balances pre-fill from your last snapshot — just update what changed. Everyday spending usually flows through a credit card, so a card's balance here is what you still owe; log the actual spending under <b>Expenses</b> and your card <b>payments</b> simply move money from a bank to the card (no need to log those as expenses).</p>
+      <p class="help">Enter where each account stands at the <b>end</b> of this two-week period. Balances pre-fill from your last snapshot — just update what changed. Everyday spending usually flows through a credit card, so a card's balance here is what you still owe; log the actual spending under <b>Expenses</b> and your card <b>payments</b> simply move money from a bank to the card (no need to log those as expenses). If you moved fresh cash into an investment, retirement, or HSA account, log it under <b>Added to investments</b> — that way the dashboard can tell apart money you added from money the market actually made or lost.</p>
 
       <div class="card" style="margin-bottom:18px">
         <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;max-width:420px">
@@ -910,6 +925,18 @@
         </div>
       </div>
 
+      <div class="section-block">
+        <div class="section-head" style="cursor:default">
+          <span class="tag" style="background:var(--slate)"></span> Added to investments this fortnight
+          <span class="sum" id="con-sum">${money(draft.contributions.reduce((s,r)=>s+n(r.amount),0))}</span>
+        </div>
+        <div class="section-body">
+          <p class="muted" style="font-size:13px;margin:2px 0 12px">New cash you moved <i>into</i> an investment/retirement/HSA account this fortnight — a 401(k) paycheck deduction, an IRA deposit, a transfer into Vanguard or Coinbase, etc. This doesn't change net worth (the money was already yours) — it just explains how much of the change in your balances was you adding cash versus the market actually moving.</p>
+          <div class="line-list" id="contrib-list">${draft.contributions.map(r=>lineRow(r,"contrib")).join("")}</div>
+          <button class="btn sm" id="add-contrib" style="margin-top:10px">+ Add contribution</button>
+        </div>
+      </div>
+
       <div class="sticky-actions">
         <div class="summary">Net worth this fortnight: <b id="live-net">${money(draftTotals().net)}</b></div>
         ${isEdit?`<button class="btn danger" id="snap-delete">Delete</button>`:""}
@@ -919,15 +946,17 @@
 
       <datalist id="income-cats">${INCOME_CATS.map(c=>`<option value="${c}">`).join("")}</datalist>
       <datalist id="expense-cats">${EXPENSE_CATS.map(c=>`<option value="${c}">`).join("")}</datalist>
+      <datalist id="contrib-cats">${CONTRIB_CATS.map(c=>`<option value="${c}">`).join("")}</datalist>
     `;
 
     wireSnapshot();
   }
 
   function lineRow(r,kind){
-    const list=kind==="income"?"income-cats":"expense-cats";
+    const list=kind==="income"?"income-cats":(kind==="contrib"?"contrib-cats":"expense-cats");
+    const placeholder=kind==="income"?"Source (e.g. Paycheck)":(kind==="contrib"?"Account (e.g. Vanguard)":"Category");
     return `<div class="line-item" data-row="${r.id}">
-      <input type="text" list="${list}" data-field="category" value="${escapeHtml(r.category||"")}" placeholder="${kind==="income"?"Source (e.g. Paycheck)":"Category"}">
+      <input type="text" list="${list}" data-field="category" value="${escapeHtml(r.category||"")}" placeholder="${placeholder}">
       <div class="money-input"><input type="number" inputmode="decimal" step="0.01" data-field="amount" value="${r.amount!=null?escapeHtml(String(r.amount)):""}" placeholder="0"></div>
       <button class="icon-btn" data-remove="${r.id}" data-kind="${kind}" title="Remove">✕</button>
     </div>`;
@@ -951,9 +980,11 @@
 
     $("#add-income").onclick=()=>{draft.income.push({id:uid(),category:"",amount:""});appendRow("income");};
     $("#add-expense").onclick=()=>{draft.expenses.push({id:uid(),category:"",amount:""});appendRow("expense");};
+    $("#add-contrib").onclick=()=>{draft.contributions.push({id:uid(),category:"",amount:""});appendRow("contrib");};
 
     wireLineList("income");
     wireLineList("expense");
+    wireLineList("contrib");
 
     if($("#snap-delete"))$("#snap-delete").onclick=()=>{
       if(confirm("Delete this fortnight permanently?")){
@@ -965,9 +996,13 @@
     $("#snap-save").onclick=saveSnapshot;
   }
 
+  function draftArr(kind){return kind==="income"?draft.income:(kind==="contrib"?draft.contributions:draft.expenses);}
+  function setDraftArr(kind,arr){if(kind==="income")draft.income=arr;else if(kind==="contrib")draft.contributions=arr;else draft.expenses=arr;}
+  function sumElId(kind){return kind==="income"?"#inc-sum":(kind==="contrib"?"#con-sum":"#exp-sum");}
+
   function appendRow(kind){
     const listEl=$("#"+kind+"-list");
-    const arr=kind==="income"?draft.income:draft.expenses;
+    const arr=draftArr(kind);
     const r=arr[arr.length-1];
     const div=document.createElement("div");
     div.innerHTML=lineRow(r,kind).trim();
@@ -977,7 +1012,7 @@
   }
 
   function wireLineList(kind){
-    const arr=kind==="income"?draft.income:draft.expenses;
+    const arr=draftArr(kind);
     const listEl=$("#"+kind+"-list");
     listEl.querySelectorAll("[data-row]").forEach(row=>{
       const id=row.dataset.row;const rec=arr.find(x=>x.id===id);if(!rec)return;
@@ -986,8 +1021,7 @@
       });
       const rm=row.querySelector("[data-remove]");
       rm.onclick=()=>{
-        if(kind==="income")draft.income=draft.income.filter(x=>x.id!==id);
-        else draft.expenses=draft.expenses.filter(x=>x.id!==id);
+        setDraftArr(kind,arr.filter(x=>x.id!==id));
         row.remove();refreshLineSum(kind);updateLiveNet();
       };
     });
@@ -1000,9 +1034,9 @@
     if(head)head.textContent=(GROUPS[g].kind==="liability"?"owe ":"")+money(sum);
   }
   function refreshLineSum(kind){
-    const arr=kind==="income"?draft.income:draft.expenses;
+    const arr=draftArr(kind);
     const sum=arr.reduce((s,r)=>s+n(r.amount),0);
-    const el=$(kind==="income"?"#inc-sum":"#exp-sum");if(el)el.textContent=money(sum);
+    const el=$(sumElId(kind));if(el)el.textContent=money(sum);
   }
   function updateLiveNet(){const el=$("#live-net");if(el)el.textContent=money(draftTotals().net);}
 
@@ -1015,6 +1049,7 @@
     Object.keys(clean.loans).forEach(k=>{clean.loans[k]=n(clean.loans[k]);});
     clean.income=clean.income.filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Income",amount:n(r.amount)}));
     clean.expenses=clean.expenses.filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Expense",amount:n(r.amount)}));
+    clean.contributions=(clean.contributions||[]).filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Contribution",amount:n(r.amount)}));
     const idx=state.periods.findIndex(p=>p.id===clean.id);
     if(idx>=0)state.periods[idx]=clean;else state.periods.push(clean);
     save();
@@ -1046,6 +1081,7 @@
         <td class="num ${d>=0?"pos":"neg"}">${prev?signed(d):"—"}</td>
         <td class="num pos">${money(t.income)}</td>
         <td class="num neg">${money(t.expenses)}</td>
+        <td class="num">${money(t.contributions)}</td>
         <td class="num ${t.cashflow>=0?"pos":"neg"}">${signed(t.cashflow)}</td>
         <td><span class="rate-pill">${t.income>0?rate.toFixed(0)+"%":"—"}</span></td>
       </tr>`;
@@ -1063,7 +1099,7 @@
       </div>
       <p class="muted" style="font-size:13px;margin:-6px 0 14px">Click any row to view or edit that fortnight.</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>Period</th><th>Net worth</th><th>Δ vs prior</th><th>Income</th><th>Expenses</th><th>Saved</th><th>Rate</th></tr></thead>
+        <thead><tr><th>Period</th><th>Net worth</th><th>Δ vs prior</th><th>Income</th><th>Expenses</th><th>Contributed</th><th>Saved</th><th>Rate</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     `;
@@ -1078,10 +1114,10 @@
 
   function exportCsv(){
     const periods=sortedPeriods();
-    const head=["Start","End","Net worth","Assets","Liabilities","Income","Expenses","Saved"];
+    const head=["Start","End","Net worth","Assets","Liabilities","Income","Expenses","Contributions","Saved"];
     const lines=[head.join(",")];
     periods.forEach(p=>{const t=periodTotals(p);
-      lines.push([p.start,p.end,t.net,t.assets,t.liabilities,t.income,t.expenses,t.cashflow].join(","));});
+      lines.push([p.start,p.end,t.net,t.assets,t.liabilities,t.income,t.expenses,t.contributions,t.cashflow].join(","));});
     download("fortnight-history.csv",lines.join("\n"),"text/csv");
     toast("CSV exported");
   }
