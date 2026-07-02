@@ -154,7 +154,7 @@
   .section-block.collapsed .caret{transform:rotate(-90deg)}
   .section-block.collapsed .section-body{display:none}
   .section-body{padding:6px 18px 16px}
-  .acct-line{display:grid;grid-template-columns:1fr 170px;gap:14px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+  .acct-line{display:grid;grid-template-columns:1fr 148px 160px;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
   .acct-line:first-child{border-top:0}
   .acct-name{font-size:14px}
   .acct-name small{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
@@ -245,7 +245,7 @@
 
   @media(max-width:860px){.hero{grid-template-columns:1fr}.panel-row{grid-template-columns:1fr}}
   @media(max-width:680px){.line-item-top{grid-template-columns:1fr 1fr 38px;}.line-item-top>:nth-child(3){grid-column:1/-1;}}
-  @media(max-width:620px){.brand-text p{display:none}.acct-line{grid-template-columns:1fr 130px}.line-item{grid-template-columns:1fr 110px 38px}.acct-edit,.add-acct{grid-template-columns:1fr 1fr;gap:8px}}
+  @media(max-width:620px){.brand-text p{display:none}.acct-line{grid-template-columns:1fr;gap:6px}.line-item{grid-template-columns:1fr 110px 38px}.acct-edit,.add-acct{grid-template-columns:1fr 1fr;gap:8px}}
   @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -285,6 +285,27 @@ const SEED_ACCOUNTS=[
 const EXPENSE_CATS=["Mortgage / housing","Rent","Groceries (Walmart)","Groceries (Indian store)","Groceries (other)","Fast food / dining out","Electricity","Water","Gas (home)","Gas (car)","Internet","Phone","Car insurance","Car payment","Health / medical","Subscriptions","Shopping","Travel","Margin interest","Fees / interest","Other"];
 const INCOME_CATS=["Paycheck","Bonus","Dividends","Interest","Side income","Refund","Other"];
 const CONTRIB_CATS=["Robinhood (Margin)","Robinhood","SoFi Invest","Webull","Vanguard","Fidelity Individual","Coinbase","Fidelity IRA","401(k) — Schwab","401(k) — Transamerica","Fidelity HSA","Inspira HSA","Other"];
+
+// Maps specific expense categories to broader display groups
+const CAT_GROUP={
+  "Groceries (Walmart)":"Groceries",
+  "Groceries (Indian store)":"Groceries",
+  "Groceries (other)":"Groceries",
+  "Gas (home)":"Gas & Utilities",
+  "Gas (car)":"Gas & Utilities",
+  "Electricity":"Gas & Utilities",
+  "Water":"Gas & Utilities",
+  "Internet":"Gas & Utilities",
+  "Mortgage / housing":"Housing",
+  "Rent":"Housing",
+  "Car insurance":"Car",
+  "Car payment":"Car",
+  "Fast food / dining out":"Dining",
+  "Health / medical":"Health",
+  "Margin interest":"Fees & Interest",
+  "Fees / interest":"Fees & Interest",
+};
+function catGroup(cat){return CAT_GROUP[cat]||cat;}
 
 // ---------- state ----------
 let state={accounts:[],periods:[]};
@@ -370,6 +391,7 @@ function migrate(){
   if((state.version||1)<4){
     // add date and items to expenses/income/contributions
     state.periods.forEach(p=>{
+      if(!p.balanceDates)p.balanceDates={};
       (p.expenses||[]).forEach(exp=>{if(!exp.date)exp.date=p.start;if(!exp.items)exp.items=[];});
       (p.income||[]).forEach(inc=>{if(!inc.date)inc.date=p.start;});
       (p.contributions||[]).forEach(con=>{if(!con.date)con.date=p.start;});
@@ -697,9 +719,13 @@ function renderDashboard(){
 }
 
 function topExpensesChart(p){
-  const byKey={};
-  (p.expenses||[]).forEach(r=>{const k=r.category||"Other";if(!byKey[k])byKey[k]={total:0,rep:r};byKey[k].total+=n(r.amount);});
-  const rows=Object.entries(byKey).map(([k,v])=>({k,total:v.total,rep:v.rep})).sort((a,b)=>b.total-a.total).slice(0,6);
+  const byGroup={};
+  (p.expenses||[]).forEach(r=>{
+    const g=catGroup(r.expenseCat||r.category||"Other");
+    if(!byGroup[g])byGroup[g]={total:0,rep:r};
+    byGroup[g].total+=n(r.amount);
+  });
+  const rows=Object.entries(byGroup).map(([k,v])=>({k,total:v.total,rep:v.rep})).sort((a,b)=>b.total-a.total).slice(0,6);
   if(!rows.length)return`<p class="muted" style="font-size:14px">No expenses logged this fortnight.</p>`;
   const max=Math.max(...rows.map(r=>r.total));
   return`<div class="bars">${rows.map(r=>{
@@ -769,13 +795,13 @@ function startNewSnapshot(){
   let start,end;
   if(last){start=isoOffset(parseDate(last.end),1);end=isoOffset(parseDate(start),13);}
   else{end=todayIso();start=isoOffset(parseDate(end),-13);}
-  draft={id:uid(),start,end,balances:last?clone(last.balances||{}):{},loans:last?clone(last.loans||{}):{},income:[],expenses:[],contributions:[],note:""};
+  draft={id:uid(),start,end,balances:last?clone(last.balances||{}):{},balanceDates:last?clone(last.balanceDates||{}):{},loans:last?clone(last.loans||{}):{},income:[],expenses:[],contributions:[],note:""};
   editingId=null;collapsed={};
 }
 function editSnapshot(id){
   const p=state.periods.find(x=>x.id===id);if(!p)return;
   draft=clone(p);
-  draft.balances=draft.balances||{};draft.loans=draft.loans||{};
+  draft.balances=draft.balances||{};draft.balanceDates=draft.balanceDates||{};draft.loans=draft.loans||{};
   draft.income=(draft.income||[]).map(r=>({...r,date:r.date||draft.start}));
   draft.expenses=(draft.expenses||[]).map(r=>({...r,date:r.date||draft.start,items:r.items||[],expenseCat:r.expenseCat||""}));
   draft.contributions=(draft.contributions||[]).map(r=>({...r,date:r.date||draft.start}));
@@ -797,7 +823,7 @@ function renderSnapshot(){
       <div class="section-body">
         ${accts.map(a=>{
           const label=GROUPS[g].kind==="liability"?"Balance owed":(g==="property"?"Estimated value":"Balance");
-          let html=`<div class="acct-line"><div class="acct-name">${escapeHtml(a.name)}<small>${label}</small></div><div class="money-input"><input type="number" inputmode="decimal" step="0.01" data-bal="${a.id}" value="${draft.balances[a.id]!=null?escapeHtml(String(draft.balances[a.id])):""}" placeholder="0"></div></div>`;
+          let html=`<div class="acct-line"><div class="acct-name">${escapeHtml(a.name)}<small>${label}</small></div><input type="date" data-baldate="${a.id}" value="${escapeHtml(draft.balanceDates[a.id]||draft.end)}" style="font-size:12px;padding:5px 8px;max-width:148px"><div class="money-input"><input type="number" inputmode="decimal" step="0.01" data-bal="${a.id}" value="${draft.balances[a.id]!=null?escapeHtml(String(draft.balances[a.id])):""}" placeholder="0"></div></div>`;
           if(a.margin){html+=`<div class="margin-note">Margin account &#x2014; enter your <b>total portfolio value</b> above (all holdings). Enter the <b>loan balance</b> below. Net worth = value &#x2212; loan = your real equity. Log margin interest as a <b>Margin interest</b> expense.</div><div class="acct-line"><div class="acct-name">&#x21B3; Margin loan balance<small>Borrowed against this account</small></div><div class="money-input"><input type="number" inputmode="decimal" step="0.01" data-loan="${a.id}" value="${draft.loans[a.id]!=null?escapeHtml(String(draft.loans[a.id])):""}" placeholder="0"></div></div>`;}
           return html;
         }).join("")}
@@ -901,6 +927,7 @@ function wireSnapshot(){
   $("#d-end").onchange=e=>{draft.end=e.target.value;};
   main().querySelectorAll("[data-toggle]").forEach(b=>{b.onclick=()=>{const g=b.dataset.toggle;collapsed[g]=!collapsed[g];b.closest(".section-block").classList.toggle("collapsed",collapsed[g]);};});
   main().querySelectorAll("[data-bal]").forEach(inp=>{inp.oninput=e=>{draft.balances[inp.dataset.bal]=e.target.value;refreshSectionSum(acctById(inp.dataset.bal).group);updateLiveNet();};});
+  main().querySelectorAll("[data-baldate]").forEach(inp=>{inp.onchange=e=>{draft.balanceDates[inp.dataset.baldate]=e.target.value;};});
   main().querySelectorAll("[data-loan]").forEach(inp=>{inp.oninput=e=>{draft.loans[inp.dataset.loan]=e.target.value;updateLiveNet();};});
 
   $("#add-income").onclick=()=>{const r={id:uid(),category:"",amount:"",date:draft.start};draft.income.push(r);appendCardRow("income-list",incomeRow(r));wireLineList("income");wireLineList("expense");};
@@ -935,6 +962,19 @@ function draftArr(kind){return kind==="income"?draft.income:(kind==="contrib"?dr
 function setDraftArr(kind,arr){if(kind==="income")draft.income=arr;else if(kind==="contrib")draft.contributions=arr;else draft.expenses=arr;}
 function sumElId(kind){return kind==="income"?"#inc-sum":(kind==="contrib"?"#con-sum":"#exp-sum");}
 
+function sortListByDate(kind){
+  // Re-order DOM nodes to match the date-sorted array
+  const arr=draftArr(kind);
+  arr.sort((a,b)=>parseDate(a.date||"2000-01-01")-parseDate(b.date||"2000-01-01"));
+  setDraftArr(kind,arr);
+  const listEl=$("#"+kind+"-list");
+  if(!listEl)return;
+  arr.forEach(r=>{
+    const row=listEl.querySelector(`[data-row="${r.id}"]`);
+    if(row)listEl.appendChild(row);// move to end in sorted order
+  });
+}
+
 function wireLineList(kind){
   const arr=draftArr(kind);
   const listEl=$("#"+kind+"-list");
@@ -942,7 +982,11 @@ function wireLineList(kind){
   listEl.querySelectorAll("[data-row]").forEach(row=>{
     const id=row.dataset.row;const rec=arr.find(x=>x.id===id);if(!rec)return;
     row.querySelectorAll("[data-field]").forEach(inp=>{
-      inp.oninput=inp.onchange=e=>{rec[inp.dataset.field]=e.target.value;if(inp.dataset.field==="amount"){refreshLineSum(kind);updateLiveNet();}};
+      inp.oninput=inp.onchange=e=>{
+        rec[inp.dataset.field]=e.target.value;
+        if(inp.dataset.field==="amount"){refreshLineSum(kind);updateLiveNet();}
+        if(inp.dataset.field==="date"){sortListByDate(kind);}
+      };
     });
     const rm=row.querySelector("[data-remove]");
     if(rm)rm.onclick=()=>{setDraftArr(kind,arr.filter(x=>x.id!==id));row.remove();refreshLineSum(kind);updateLiveNet();};
@@ -1012,6 +1056,7 @@ function saveSnapshot(){
   const clean=clone(draft);
   Object.keys(clean.balances).forEach(k=>{clean.balances[k]=n(clean.balances[k]);});
   Object.keys(clean.loans).forEach(k=>{clean.loans[k]=n(clean.loans[k]);});
+  clean.balanceDates=clean.balanceDates||{};
   clean.income=clean.income.filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Income",amount:n(r.amount),date:r.date||clean.start}));
   clean.expenses=clean.expenses.filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Expense",expenseCat:r.expenseCat||"",amount:n(r.amount),date:r.date||clean.start,items:(r.items||[]).filter(it=>it.name||n(it.amount)).map(it=>({name:it.name||"",amount:n(it.amount)}))}));
   clean.contributions=(clean.contributions||[]).filter(r=>r.category||n(r.amount)).map(r=>({id:r.id,category:r.category||"Contribution",amount:n(r.amount),date:r.date||clean.start}));
@@ -1095,7 +1140,7 @@ function runDateRange(){
       const d=parseDate(r.date||p.start);
       if(d>=from&&d<=to){
         const amt=n(r.amount);totalExpenses+=amt;
-        const cat=r.expenseCat||r.category||"Other";
+        const cat=catGroup(r.expenseCat||r.category||"Other");
         if(!catMap[cat])catMap[cat]={total:0};catMap[cat].total+=amt;
         txnList.push({...r,periodId:p.id,cat});
       }
